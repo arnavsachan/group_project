@@ -347,12 +347,23 @@ app.post('/api/ai/can-i-apply', async (req, res) => {
   }
 });
 
-// 9. AI "Ask AI About This Scheme" Chat Endpoint
-app.post('/api/ai/chat', async (req, res) => {
+// 9. AI "Ask AI About This Scheme" Chat Endpoint (Powered by Google Gemini Flash)
+app.post(['/api/ai/chat', '/api/ai/scheme-chat'], async (req, res) => {
   try {
-    const { slug, question = '' } = req.body;
-    let scheme = req.body.scheme;
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const rateCheck = checkAiRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ error: rateCheck.error, answer: rateCheck.error });
+    }
 
+    const { slug, question = '' } = req.body;
+    const cleanQuestion = (question || '').trim();
+
+    if (!cleanQuestion) {
+      return res.status(400).json({ error: 'Question is required.' });
+    }
+
+    let scheme = req.body.scheme;
     if (!scheme && slug) {
       scheme = await queryGet(`SELECT * FROM schemes WHERE slug = ?`, [slug]);
     }
@@ -361,10 +372,112 @@ app.post('/api/ai/chat', async (req, res) => {
       return res.status(400).json({ error: 'Scheme data or valid slug required' });
     }
 
-    const chatResponse = aiService.askAiAboutScheme(scheme, question);
-    res.json(chatResponse);
+    // 1. Check if GEMINI_API_KEY is configured
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey || apiKey === 'your_gemini_api_key_here' || apiKey.trim() === '') {
+      // Offline fallback
+      const offlineAns = aiService.askAiAboutScheme(scheme, cleanQuestion);
+      return res.json(offlineAns);
+    }
+
+    // 2. Build strict Grounded Context from this scheme's real database fields
+    const schemeContext = `
+SCHEME PROFILE:
+- Title: ${scheme.title || scheme.short_title || 'N/A'}
+- Level: ${scheme.level || 'Central'} (${scheme.state ? 'State: ' + scheme.state : 'All-India Central'})
+- Nodal Ministry / Department: ${scheme.nodal_ministry || 'N/A'}
+- Implementing Agency: ${scheme.implementing_agency || 'N/A'}
+- Description: ${scheme.brief_description || scheme.detailed_description_md || 'N/A'}
+
+OFFICIAL ELIGIBILITY CRITERIA:
+${scheme.eligibility_md || 'No specific eligibility markdown details available in database.'}
+
+BENEFITS & FINANCIAL ASSISTANCE:
+${scheme.benefits_md || 'No specific benefits details available in database.'}
+
+REQUIRED DOCUMENTS:
+${scheme.documents_md || 'No specific documents list provided in database.'}
+
+APPLICATION PROCESS:
+${scheme.application_process_md || 'No specific application process details provided in database.'}
+`;
+
+    const systemPrompt = `You are a helpful, precise government scheme expert assistant. You are answering a citizen's question specifically about the following scheme: "${scheme.title}".
+
+IMPORTANT INSTRUCTIONS:
+1. ONLY answer based on the official scheme data provided below.
+2. If the user asks about eligibility (such as age, gender, caste, income, or category), check the OFFICIAL ELIGIBILITY CRITERIA section carefully and give a definitive, accurate answer based on those rules.
+3. If the user asks about required documents, list the exact documents from the REQUIRED DOCUMENTS section.
+4. If the required information is NOT present in the provided scheme data, clearly state: "Based on the official scheme records available, that specific detail is not specified." Do NOT hallucinate or guess.
+5. Keep your answer clear, polite, and concise using bullet points where appropriate.
+
+OFFICIAL SCHEME DATA:
+${schemeContext}`;
+
+    const contents = [
+      {
+        role: 'user',
+        parts: [{ text: `${systemPrompt}\n\nCitizen's Question: ${cleanQuestion}` }]
+      }
+    ];
+
+    // 3. Call Google Gemini Flash REST API (Server-side)
+    const geminiModels = ['gemini-flash-lite-latest', 'gemini-flash-latest'];
+    let generatedAnswer = null;
+
+    for (const modelName of geminiModels) {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+      try {
+        const geminiResponse = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            generationConfig: {
+              temperature: 0.2, // Low temperature for high factual accuracy
+              maxOutputTokens: 600,
+              topP: 0.95
+            }
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (geminiResponse.ok) {
+          const geminiData = await geminiResponse.json();
+          generatedAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (generatedAnswer) break;
+        } else {
+          const errText = await geminiResponse.text();
+          console.warn(`Scheme Chat Gemini ${modelName} returned status ${geminiResponse.status}:`, errText);
+        }
+      } catch (callErr) {
+        clearTimeout(timeoutId);
+        console.warn(`Scheme Chat Gemini attempt with ${modelName} failed:`, callErr.message);
+      }
+    }
+
+    if (generatedAnswer) {
+      return res.json({
+        answer: generatedAnswer,
+        slug: scheme.slug,
+        title: scheme.title
+      });
+    }
+
+    // Offline fallback if Gemini fails or is throttled
+    console.warn('Gemini calls failed for scheme chat, using offline answer fallback');
+    const fallbackAns = aiService.askAiAboutScheme(scheme, cleanQuestion);
+    return res.json(fallbackAns);
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Scheme chat error:', err);
+    res.status(500).json({ error: 'AI assistant is temporarily unavailable.', answer: 'AI assistant is temporarily unavailable. Please try again in a moment.' });
   }
 });
 

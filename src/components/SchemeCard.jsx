@@ -99,13 +99,12 @@ export default function SchemeCard({ scheme, matchScore }) {
 
       {/* Card Footer Actions */}
       <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
-        <span className="text-xs text-slate-500 font-medium">Slug: {scheme.slug}</span>
-        <button onClick={toggleLike} className={`heart-btn ${isLiked ? 'liked' : ''}`} aria-label={isLiked ? 'Unlike' : 'Like'}>
+        <button onClick={toggleLike} className={`heart-btn ${isLiked ? 'liked' : ''} cursor-pointer`} aria-label={isLiked ? 'Unlike' : 'Like'}>
           <Heart className="w-5 h-5" />
         </button>
         <Link
           to={`/scheme/${scheme.slug}`}
-          className="text-xs font-semibold text-indigo-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1"
+          className="text-xs font-semibold text-indigo-400 bg-slate-900 border border-slate-800 px-3.5 py-1.5 rounded-lg hover:bg-slate-800 hover:text-indigo-300 transition-colors flex items-center gap-1.5"
         >
           View Details
           <ExternalLink className="w-3 h-3 text-indigo-400" />

@@ -212,11 +212,12 @@ export default function Profile() {
               <label htmlFor="income" className="block text-sm font-medium text-slate-300 mb-1">Annual Income</label>
               <select name="income" id="income" className="w-full glass-input px-3 py-2 rounded text-white bg-transparent" value={form.income} onChange={handleChange}>
                 <option value="">Select income bracket</option>
-                <option value="below_1">Below ₹1 Lakh</option>
-                <option value="1_3">₹1‑3 Lakh</option>
-                <option value="3_5">₹3‑5 Lakh</option>
-                <option value="5_10">₹5‑10 Lakh</option>
-                <option value="above_10">Above ₹10 Lakh</option>
+                <option value="No Income / Not Earning">No Income / Not Earning</option>
+                <option value="Below ₹1 Lakh">Below ₹1 Lakh</option>
+                <option value="₹1-3 Lakh">₹1-3 Lakh</option>
+                <option value="₹3-5 Lakh">₹3-5 Lakh</option>
+                <option value="5-10 Lakh">₹5-10 Lakh</option>
+                <option value="Above ₹10 Lakh">Above ₹10 Lakh</option>
               </select>
             </div>
           </div>

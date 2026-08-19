@@ -25,12 +25,23 @@ export default function FindSchemes() {
   // Populate form when user opts to use saved profile
   useEffect(() => {
     if (useSaved && savedProfile) {
+      const normalizeIncome = (inc) => {
+        if (!inc) return '';
+        if (inc === 'below_1') return 'Below ₹1 Lakh';
+        if (inc === '1_3') return '₹1-3 Lakh';
+        if (inc === '3_5') return '₹3-5 Lakh';
+        if (inc === '5_10') return '₹5-10 Lakh';
+        if (inc === 'above_10') return 'Above ₹10 Lakh';
+        return inc;
+      };
+
       setForm({
         age: savedProfile.age || '',
         state: savedProfile.state || '',
         category: savedProfile.category || '',
         occupation: savedProfile.occupation || '',
-        gender: savedProfile.gender || ''
+        gender: savedProfile.gender || '',
+        income: normalizeIncome(savedProfile.income)
       });
     } else {
       setForm(emptyForm);
